@@ -1,0 +1,23 @@
+# Runs service validations for named, envoy, kafka, mysql, and rabbitmq services.
+# Each validation task is conditionally executed based on the intersection
+# of service-specific groups and the current host's group names.
+---
+- name: Validate named service
+  include_tasks: named.yaml
+  when: named_groups | intersect(group_names) | length > 0
+
+- name: Validate envoy service
+  include_tasks: envoy.yaml
+  when: envoy_groups | intersect(group_names) | length > 0
+
+- name: Validate kafka service
+  include_tasks: kafka.yaml
+  when: kafka_groups | intersect(group_names) | length > 0
+
+- name: Validate mysql service
+  include_tasks: mysql.yaml
+  when: mysql_groups | intersect(group_names) | length > 0
+
+- name: Validate rabbitmq service
+  include_tasks: rabbitmq.yaml
+  when: rabbitmq_groups | intersect(group_names) | length > 0

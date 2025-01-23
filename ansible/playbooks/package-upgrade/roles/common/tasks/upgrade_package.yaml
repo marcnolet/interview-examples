@@ -1,0 +1,19 @@
+# Upgrade the specified packages to their latest versions and display the upgrade log
+#
+# This task upgrades the installed packages listed in the 'installed_packages' variable
+# to their latest versions using the apt package manager. It then displays the upgrade
+# log for informational purposes.
+#
+# Note: This task requires root privileges to execute successfully.
+---
+- name: Upgrade installed package
+  ansible.builtin.apt:
+    name: "{{ installed_packages | join(',') }}"
+    state: latest
+    only_upgrade: true
+  register: apt_result
+
+- name: Display package upgrade log
+  ansible.builtin.debug:
+    msg: "{{ aptcheck.stdout_lines }}"
+  when: aptcheck.changed | default(false)

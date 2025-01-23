@@ -1,0 +1,94 @@
+# This playbook performs the following tasks:
+# 1. Gathers package facts using the system's package manager.
+# 2. Checks the status and configuration of unattended-upgrades if installed.
+# 3. Retrieves and displays the versions of specified packages.
+# 4. Checks for available updates for the installed packages.
+#
+# The playbook is designed to provide information about the system's package
+# status and potential upgrades, which can be useful for system administrators
+# and DevOps teams managing package updates across multiple servers.
+---
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Check unattended-upgrades package and configuration
+  when: 
+    - "'unattended-upgrades' in ansible_facts.packages"
+    - not get_pkgonly
+  block:
+    - name: Check if unattended-upgrades service is running
+      ansible.builtin.service_facts:
+      when: "'unattended-upgrades' in ansible_facts.packages"
+
+    - name: Set fact for unattended-upgrades service status
+      ansible.builtin.set_fact:
+        unattended_upgrades_running: "{{ ansible_facts.services['unattended-upgrades.service'].state == 'running' }}"
+
+    - name: Check if unattended-upgrades is enabled for package upgrades
+      command: apt-config dump APT::Periodic::Unattended-Upgrade --format %v
+      register: unattended_upgrades_enabled
+      changed_when: false
+      when: unattended_upgrades_running
+
+    - name: Display unattended-upgrades status
+      ansible.builtin.debug:
+        msg: >
+          Unattended-upgrades service is {{ 'running' if unattended_upgrades_running else 'not running' }}.
+          {% if unattended_upgrades_running %}
+          Unattended upgrades are {{ 'enabled' if unattended_upgrades_enabled.stdout | int > 0 else 'disabled' }} for package upgrades.
+          {% endif %}
+
+    - name: Show APT::Periodic configuration
+      block:
+      - name: Get APT::Periodic configuration
+        command: apt-config dump APT::Periodic
+        register: apt_periodic_config
+        changed_when: false
+
+      - name: Display APT::Periodic configuration
+        ansible.builtin.debug:
+          msg: "{{ apt_periodic_config.stdout_lines }}"
+      when: unattended_upgrades_running
+  ignore_errors: yes
+
+- name: Get installed package versions
+  block:
+    - name: Initialize installed_packages dict
+      set_fact:
+        installed_packages: {}
+
+    - name: Create dict of installed packages and their version
+      set_fact:
+        installed_packages: "{{ installed_packages | combine({item: ansible_facts.packages[item][0].version}) }}"
+      loop: "{{ packages }}"
+      when: item in ansible_facts.packages
+
+    - name: Display installed packages and their versions
+      ansible.builtin.debug:
+        var: installed_packages
+      when: installed_packages | length > 0
+
+- name: Get upgrade changes
+  when: not get_pkgonly
+  block:
+    - name: Update apt package cache
+      when: update_cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      async: 20
+      poll: 2
+
+    - name: Check installed packages for available updates
+      check_mode: true
+      ansible.builtin.apt:
+        name: "{{ installed_packages | join(',') }}"
+        state: latest
+        only_upgrade: true
+      register: aptcheck
+
+    - name: Show changes
+      debug:
+        msg: "{{ aptcheck.stdout_lines | select('match', '^(The following.*:|\\s+.+)') | list | default('') }}"
+      when: aptcheck.changed | default(false)

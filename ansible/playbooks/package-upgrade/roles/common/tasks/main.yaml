@@ -1,0 +1,17 @@
+# This playbook performs the following tasks:
+# 1. Retrieves package details and change information
+# 2. Executes package upgrade if the package is installed
+# 3. Checks if a reboot is necessary after the upgrade
+---
+- name: Get package and change details
+  include_tasks: get_package_info.yaml
+
+- name: Run guardrails
+  include_tasks: guardrails.yaml
+
+- name: Run package upgrade
+  when: upgrade_if_installed
+  include_tasks: upgrade_package.yaml
+
+- name: Check if rebooting is required
+  include_tasks: reboot_instance.yaml

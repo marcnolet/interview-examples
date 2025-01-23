@@ -1,0 +1,65 @@
+# This playbook performs the following tasks:
+# 1. Ensures the MySQL service is running
+# 2. Waits for the MySQL service to start if it was just started
+# 3. Checks and displays the MySQL service status
+# 4. If MySQL is active:
+#    - Determines if the MySQL server is a master or slave
+#    - Displays the MySQL server role
+# 5. If MySQL is not active:
+#    - Sets skip_host to true and fails the play
+---
+- name: Ensure MySQL-related services are running
+  become: true
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - mysql
+    - mysqld_exporter
+  register: service_statuses
+
+- name: Wait for MySQL service to start
+  ansible.builtin.pause:
+    seconds: 5
+  when: service_statuses.changed
+
+- name: Check MySQL-related service statuses
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+  loop:
+    - mysql
+    - mysqld_exporter
+  register: service_statuses
+
+- name: Set service status facts
+  ansible.builtin.set_fact:
+    mysql_service: "{{ service_statuses.results | selectattr('item', 'equalto', 'mysql') | first }}"
+    exporter_service: "{{ service_statuses.results | selectattr('item', 'equalto', 'mysqld_exporter') | first }}"
+
+- name: Display service status
+  ansible.builtin.debug:
+    msg:
+    - "MySQL service: {{ 'running' if mysql_service.status.ActiveState == 'active' else 'not running' }}"
+    - "MySQLd Exporter service: {{ 'running' if exporter_service.status.ActiveState == 'active' else 'not running' }}"
+
+- name: MySQL Role Check
+  when: mysql_service.status.ActiveState == 'active'
+  block:
+  - name: Check if MySQL server is master or slave
+    become: true
+    command: mysql -e "SHOW SLAVE STATUS\G"
+    register: slave_status
+
+  - name: Set fact for MySQL server role
+    ansible.builtin.set_fact:
+      mysql_role: "{{ 'slave' if slave_status.rc == 0 and slave_status.stdout | length > 0 else 'master' }}"
+
+  - name: Display MySQL server role
+    ansible.builtin.debug:
+      msg: "MySQL server is running as {{ mysql_role }}"
+
+- name: Set skip_host and fail play
+  ansible.builtin.set_fact:
+    skip_host: true
+  failed_when: true
+  when: service_statuses.results | map(attribute='status.ActiveState') | select('ne', 'active') | list | length > 0

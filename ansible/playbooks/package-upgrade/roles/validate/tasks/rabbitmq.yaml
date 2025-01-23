@@ -1,0 +1,60 @@
+# Validate RabbitMQ services and queue status
+#
+# This playbook performs the following tasks:
+# 1. Checks and ensures RabbitMQ-related services are running
+# 2. Waits for services to start if they were changed
+# 3. Sets facts for service statuses
+# 4. Displays the status of RabbitMQ and RabbitMQ Exporter services
+# 5. Checks and displays RabbitMQ queue status if the service is active
+# 6. Sets skip_host fact and fails the play if any service fails to start
+---
+- name: Ensure RabbitMQ-related services are running
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - rabbitmq-server
+    - rabbitmq_exporter
+  register: service_statuses
+
+- name: Wait for services to start
+  ansible.builtin.pause:
+    seconds: 5
+  when: service_statuses.changed
+
+- name: Check RabbitMQ-related service statuses
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+  loop:
+    - rabbitmq-server
+    - rabbitmq_exporter
+  register: service_statuses
+
+- name: Set service status facts
+  ansible.builtin.set_fact:
+    rabbitmq_service: "{{ service_statuses.results | selectattr('item', 'equalto', 'rabbitmq-server') | first }}"
+    exporter_service: "{{ service_statuses.results | selectattr('item', 'equalto', 'rabbitmq_exporter') | first }}"
+
+- name: Display service status
+  ansible.builtin.debug:
+    msg:
+    - "RabbitMQ service: {{ 'running' if rabbitmq_service.status.ActiveState == 'active' else 'not running' }}"
+    - "RabbitMQ Exporter service: {{ 'running' if exporter_service.status.ActiveState == 'active' else 'not running' }}"
+
+- name: RabbitMQ Queues
+  when: rabbitmq_service.status.ActiveState == 'active'
+  block:
+  - name: Check RabbitMQ queue status
+    command: rabbitmqctl list_queues
+    register: queue_status
+    changed_when: false
+
+  - name: Display RabbitMQ queue status
+    ansible.builtin.debug:
+      msg: "Queue status: {{ queue_status.stdout }}"
+
+- name: Set skip_host and fail play for this host if start attempt fails
+  ansible.builtin.set_fact:
+    skip_host: true
+  failed_when: true
+  when: service_statuses.results | map(attribute='status.ActiveState') | select('ne', 'active') | list | length > 0

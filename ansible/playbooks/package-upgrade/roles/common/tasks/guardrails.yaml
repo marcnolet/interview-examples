@@ -1,0 +1,95 @@
+---
+# This playbook performs guardrail checks for skipping hosts and roles during package upgrades.
+# It searches for skip files, processes their contents, and sets skip flags accordingly.
+# The playbook also handles role-specific skipping based on host prefixes.
+# Key steps:
+# 1. Look for skip host and role guardrail files
+# 2. Process file contents and compare with inventory hostnames
+# 3. Handle role-specific skipping for non-independent hosts
+# 4. Set skip flags based on comparisons
+# 5. Display skipped hosts for visibility
+---
+- name: Look for skip host guardrail files
+  find:
+    paths:
+      - "{{ playbook_dir }}"
+      - "{{ setup_vars_dir }}"
+    patterns:
+      - "*.retry"
+      - "skiphost"
+      - "skiprole"
+  register: skip_files
+  delegate_to: localhost
+
+- name: Look for skip role guardrail files
+  find:
+    paths:
+      - "{{ playbook_dir }}"
+      - "{{ setup_vars_dir }}"
+    patterns:
+      - "*.retry"
+      - "skiprole"
+  register: skip_role_files
+  delegate_to: localhost
+
+- name: Process File Contents
+  when: skip_files.matched > 0
+  block:
+    - name: Display found skip files
+      debug:
+        msg: "Found skip files: {{ skip_files.files | map(attribute='path') | list }}"
+
+    - name: Read file contents
+      command: "cat {{ item.path }}"
+      register: skip_file_contents
+      loop: "{{ skip_files.files }}"
+      delegate_to: localhost
+      no_log: true
+
+    - name: Create list of file contents
+      ansible.builtin.set_fact:
+        skip_file_lines: "{{ skip_file_lines | default([]) + item.stdout_lines }}"
+      loop: "{{ skip_file_contents.results }}"
+      delegate_to: localhost
+      no_log: true
+
+    - name: Compare skip_file_lines with inventory_hostname
+      ansible.builtin.set_fact:
+        skip_host: "{{ skip_host | default(false) or (inventory_hostname in skip_file_lines) }}"
+      delegate_to: localhost
+      no_log: true
+
+- name: Compare hosts for role guard check
+  when:
+  - skip_role_files.matched > 0
+  - not skip_host | bool
+  - not independent_hosts | intersect(group_names) | length > 0
+  block:
+    - name: Get role from host prefix
+      ansible.builtin.set_fact:
+        current_host_role: "{{ inventory_hostname.split('-')[:2] | join('-') }}"
+
+    - name: Read file contents
+      command: "cat {{ item.path }}"
+      register: skip_role_file_contents
+      loop: "{{ skip_role_files.files }}"
+      delegate_to: localhost
+      no_log: true
+
+    - name: Create list of file contents
+      ansible.builtin.set_fact:
+        skip_role_file_lines: "{{ skip_role_file_lines | default([]) + item.stdout_lines }}"
+      loop: "{{ skip_role_file_contents.results }}"
+      delegate_to: localhost
+      no_log: true
+
+    - name: Compare roles and set skip_host
+      ansible.builtin.set_fact:
+        skip_host: >-
+          {{ skip_host | default(false) or 
+             (item.split('-')[:2] | join('-') == current_host_role) }}
+      loop: "{{ skip_role_file_lines }}"
+
+- name: Show Skipped hosts
+  debug:
+    msg: "{{ inventory_hostname }} skipped: {{ skip_host | default(false) }}"

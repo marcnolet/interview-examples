@@ -1,0 +1,37 @@
+
+# Operation vars
+run_validation: false
+
+# Role validation groups
+envoy_groups:
+  - label_role_be_coredb
+  - label_role_be_intsubdb
+  - label_role_be_kafka
+  - label_role_be_mergedb
+  - label_role_be_plannerdb
+  - label_role_be_rabbitmq
+  - label_role_be_sharddb
+  - label_role_be_staticdb
+  - label_role_be_verdictsdb
+  - label_role_fe_lprabbitmq
+  - label_role_fe_rabbitmq
+
+kafka_groups:
+  - label_role_be_kafka
+
+mysql_groups:
+  - label_role_be_coredb
+  - label_role_be_intsubdb
+  - label_role_be_mergedb
+  - label_role_be_plannerdb
+  - label_role_be_sharddb
+  - label_role_be_staticdb
+  - label_role_be_verdictsdb
+
+named_groups:
+  - label_role_nsmalware
+
+rabbitmq_groups:
+  - label_role_be_rabbitmq
+  - label_role_fe_lprabbitmq
+  - label_role_fe_rabbitmq

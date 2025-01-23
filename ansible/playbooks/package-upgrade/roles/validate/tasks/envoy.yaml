@@ -1,0 +1,51 @@
+# Validate Envoy container
+# This playbook performs the following tasks:
+# 1. Checks if the Envoy container exists
+# 2. Ensures the Envoy container is running
+# 3. Verifies the Envoy service status
+# 4. Fails the play if the container doesn't exist or the service is not running
+# 5. Sets skip_host to true if validation fails
+---
+- name: Get Envoy container info
+  docker_container_info:
+    name: envoy
+  register: result
+
+- name: Does Envoy exist?
+  ansible.builtin.debug:
+    msg: "Envoy container: {{ 'exists' if result.exists else 'does not exist' }}"
+
+- name: Set skip_host and fail play if container doesn't exist
+  ansible.builtin.set_fact:
+    skip_host: true
+  failed_when: true
+  when: not result.exists
+
+- name: Check Envoy service
+  when: result.exists
+  block:
+  - name: Ensure Envoy container is running
+    docker_container:
+      name: envoy
+      state: started
+    register: envoy_status
+ 
+  - name: Wait for Envoy service to start
+    ansible.builtin.pause:
+      seconds: 5
+    when: envoy_status.changed
+
+  - name: Check Envoy service status
+    docker_container:
+      name: envoy
+    register: envoy_service
+
+  - name: Display Envoy service status
+    ansible.builtin.debug:
+      msg: "Envoy service: {{ 'running' if envoy_service.container['State']['Status'] == 'running' else 'not running' }}"
+
+  - name: Set skip_host and fail play
+    ansible.builtin.set_fact:
+      skip_host: true
+    failed_when: true
+    when: envoy_service.container['State']['Status'] != 'running' 

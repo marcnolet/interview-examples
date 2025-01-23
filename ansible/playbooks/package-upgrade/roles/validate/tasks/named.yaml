@@ -1,0 +1,33 @@
+# This task list ensures that the Named service is running and performs necessary checks.
+# It includes the following steps:
+# 1. Start the Named service
+# 2. Wait for the service to start (if it was just started)
+# 3. Check the service status
+# 4. Display the service status
+# 5. Set skip_host and fail the play if the service is not running
+---
+- name: Ensure Named service is running
+  ansible.builtin.systemd:
+    name: named
+    state: started
+  register: named_status
+
+- name: Wait for Named service to start
+  ansible.builtin.pause:
+    seconds: 5
+  when: named_status.changed
+
+- name: Check Named service status
+  ansible.builtin.systemd:
+    name: named
+  register: named_service
+
+- name: Display Named service status
+  ansible.builtin.debug:
+    msg: "Named service: {{ 'running' if named_service.status.ActiveState == 'active' else 'not running' }}"
+
+- name: Set skip_host and fail play
+  ansible.builtin.set_fact:
+    skip_host: true
+  failed_when: true
+  when: named_service.status.ActiveState != 'active'

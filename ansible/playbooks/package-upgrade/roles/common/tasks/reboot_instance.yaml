@@ -1,0 +1,23 @@
+# This task checks if a reboot is required and performs a reboot if necessary.
+# It first determines if the host is localhost, then checks for the presence of
+# a reboot-required file. If a reboot is required and allowed, it reboots
+# non-localhost instances.
+---
+- name: Check if localhost and remote host are the same
+  ansible.builtin.set_fact:
+    is_localhost: "{{ inventory_hostname == controller_hostname or inventory_hostname in ['localhost', '127.0.0.1'] }}"
+
+- name: Check if a reboot is required
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+    get_checksum: false
+  register: rr
+
+- name: Print result when true
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: Reboot required"
+  when: rr.stat.exists
+
+- name: Rebooting instances
+  ansible.builtin.reboot:
+  when: rr.stat.exists and reboot_if_required and not is_localhost

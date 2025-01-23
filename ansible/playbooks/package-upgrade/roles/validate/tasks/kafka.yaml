@@ -1,0 +1,55 @@
+# Validate Kafka-related services
+#
+# This playbook performs the following tasks:
+# 1. Checks and starts Kafka-related services (Zookeeper, Kafka, and Kafka Exporter)
+# 2. Waits for services to start if any changes were made
+# 3. Rechecks service statuses after the wait period
+# 4. Sets facts for individual service statuses
+# 5. Displays the running status of each service
+# 6. Fails the play and marks the host to be skipped if any service fails to start
+#
+# The playbook ensures all Kafka-related services are running properly before proceeding
+# with further tasks in the package upgrade process.
+---
+- name: Ensure Kafka-related service are running
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - confluent-zookeeper
+    - confluent-kafka
+    - kafka_exporter
+  register: service_statuses
+
+- name: Wait for services to start
+  ansible.builtin.pause:
+    seconds: 5
+  when: service_statuses.changed
+
+- name: Check Kafka-related service statuses
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+  loop:
+    - confluent-zookeeper
+    - confluent-kafka
+    - kafka_exporter
+  register: service_statuses
+
+- name: Set service status facts
+  ansible.builtin.set_fact:
+    zookeeper_service: "{{ service_statuses.results | selectattr('item', 'equalto', 'confluent-zookeeper') | first }}"
+    kafka_service: "{{ service_statuses.results | selectattr('item', 'equalto', 'confluent-kafka') | first }}"
+    exporter_service: "{{ service_statuses.results | selectattr('item', 'equalto', 'kafka_exporter') | first }}"
+
+- name: Display service status
+  ansible.builtin.debug:
+    msg:
+    - "Zookeeper service: {{ 'running' if zookeeper_service.status.ActiveState == 'active' else 'not running' }}"
+    - "Kafka service: {{ 'running' if kafka_service.status.ActiveState == 'active' else 'not running' }}"
+    - "Kafka Exporter service: {{ 'running' if exporter_service.status.ActiveState == 'active' else 'not running' }}"
+
+- name: Set skip_host and fail play for this host if start attempt fails
+  ansible.builtin.set_fact:
+    skip_host: true
+  failed_when: true
+  when: service_statuses.results | map(attribute='status.ActiveState') | select('ne', 'active') | list | length > 0

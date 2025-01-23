@@ -1,0 +1,21 @@
+# Controller Guardrail vars
+controller_hostname: "{{ lookup('pipe', 'hostname') }}"
+is_localhost: false
+
+# Custom group for excluding non-clustered hosts from Group Guardrails checks
+independent_hosts:
+  - label_role_controller
+  - label_role_nexpose
+  - label_role_testrunner
+
+# Operation vars
+get_pkgonly: false
+run_pkgcheck: false
+run_precheck: false
+run_upgrade: false
+
+# Task Vars
+apt_verbose: true
+reboot_if_required: false
+update_cache: true
+upgrade_if_installed: false

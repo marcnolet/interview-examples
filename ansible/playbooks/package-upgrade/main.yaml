@@ -1,0 +1,98 @@
+# Main playbook for package upgrades
+#
+# README: This playbook is meant to be executed using begin_patch.py in the script directory. See the README for more information.
+#
+# This playbook handles the process of upgrading packages on specified hosts
+# It includes the following steps:
+# 1. Check guardrails (when not running package check)
+# 2. Perform pre-upgrade checks (when running pre-checks or package checks)
+# 3. Upgrade packages (when upgrade is requested)
+# 4. Perform post-upgrade validation (when upgrade or validation is requested)
+# 
+# The playbook uses various roles and tasks to accomplish these steps,
+# and includes conditional logic to control execution based on input variables.
+---
+- hosts: "{{ host_list }}"
+  become: true
+  gather_facts: true
+  vars_files:
+    - "vars/main.yaml"
+    - "{{ lookup('first_found', {'files': ['/etc/deploy/metadata.yaml', '/dev/null'] }) }}"
+
+  pre_tasks:
+    - name: Include dynamic setup vars files
+      include_vars: "{{ item }}"
+      with_fileglob:
+        - "{{ setup_vars_dir }}/setupvars.yaml"
+        - "{{ setup_vars_dir }}/packages.yaml"
+      when: setup_vars_dir is defined
+      ignore_errors: yes
+
+    - name: Include dynamic patch-groups file if it exists
+      include_vars:
+        file: "{{ setup_vars_dir }}/patch-groups-{{ region }}.yaml"
+      when:
+        - setup_vars_dir is defined
+        - region != ''
+      ignore_errors: yes
+    
+    - name: Print inventory file
+      debug:
+        msg: "Using inventory file: {{ inventory_file }}"
+
+  tasks:
+    - name: Check Guardrails
+      when: not run_pkgcheck
+      import_role: 
+        name: common
+        tasks_from: guardrails.yaml
+
+    - name: Host guard passed or running pre-checks only
+      when: not skip_host
+      block:
+        - name: Upgrade Precheck
+          when: run_precheck or run_pkgcheck
+          block:
+            - import_role:
+                name: common
+                tasks_from: get_package_info.yaml
+
+            - import_role:
+                name: common
+                tasks_from: reboot_instance.yaml
+              when: not run_pkgcheck 
+            
+            - import_role:
+                name: validate
+              when: not run_pkgcheck
+
+        - name: Upgrade packages
+          when: 
+            - run_upgrade
+            - not skip_host
+          block:
+            - import_role:
+                name: common
+                tasks_from: upgrade_package.yaml
+              vars: 
+                upgrade_if_installed: true
+
+            - import_role:
+                name: common
+                tasks_from: reboot_instance.yaml
+              vars:
+                reboot_if_required: true
+
+        - name: Post upgrade validation
+          when: 
+            - run_upgrade or run_validation
+            - not skip_host
+          block:
+            - import_role:
+                name: common
+                tasks_from: get_package_info.yaml 
+              vars:
+                get_pkgonly: true               
+
+            - import_role:
+                name: validate
